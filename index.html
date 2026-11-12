@@ -64,6 +64,13 @@ canvas{display:block;width:100%;height:100%;touch-action:none;cursor:grab}
 #card .k{font-size:12px;color:var(--muted)}
 #card a{color:var(--red);overflow-wrap:anywhere;font-size:12px}
 #card .x{position:absolute;top:6px;left:8px;background:none;border:0;color:var(--muted);font-size:18px;cursor:pointer}
+#xfer{background:var(--panel);border:1px solid var(--line);border-top:3px solid var(--red);border-radius:4px;padding:12px;display:flex;flex-direction:column;gap:8px}
+#xfer p{margin:0;font-size:13px;color:var(--muted)}
+#xfer textarea{font:12px var(--mono);direction:ltr;width:100%;box-sizing:border-box;min-height:70px;background:var(--bg);color:var(--ink);border:1px solid var(--line);border-radius:3px;padding:6px}
+#xfer .row2{display:flex;flex-wrap:wrap;gap:8px}
+#xfer button{font:inherit;padding:7px 12px;border-radius:3px;border:1px solid var(--line);background:var(--bg);color:var(--ink);cursor:pointer}
+#xfer button.pri{background:var(--red);color:var(--red-ink);border-color:var(--red)}
+#xferMsg{font-size:13px;color:var(--ok);min-height:1em}
 .mono{font-family:var(--mono);direction:ltr;unicode-bidi:isolate}
 .tabs{display:none;gap:6px}
 button:focus-visible,input:focus-visible,select:focus-visible,.row:focus-visible{outline:2px solid var(--red);outline-offset:1px}
@@ -87,6 +94,7 @@ button:focus-visible,input:focus-visible,select:focus-visible,.row:focus-visible
       <div class="bar"><i id="pbar"></i></div>
       <span class="pnum" id="pnum">0 / 0</span>
       <span class="sync" id="sync">جارٍ الاتصال…</span>
+      <button class="chip" id="xferBtn" aria-expanded="false">نقل التقدّم بين الأجهزة</button>
     </div>
   </header>
   <div class="controls">
@@ -96,6 +104,12 @@ button:focus-visible,input:focus-visible,select:focus-visible,.row:focus-visible
     <label class="toggle"><input id="onlyDesc" type="checkbox"> ما له وصف مكان فقط</label>
     <div class="tabs"><button id="tList">القائمة</button><button id="tMap">الخريطة</button></div>
   </div>
+  <section id="xfer" hidden>
+    <p>١) في الجهاز اللي فيه تقدّمك اضغط «انسخ رمز التقدّم». ٢) أرسل الرمز لنفسك وألصقه في الجهاز الثاني، ثم اضغط «أضِف». الإضافة تدمج ولا تمسح شيئًا.</p>
+    <div class="row2"><button class="pri" id="xferCopy">انسخ رمز التقدّم</button><button id="xferMerge">أضِف الرمز الملصوق</button></div>
+    <textarea id="xferBox" aria-label="رمز التقدّم" placeholder="الصق الرمز أو الرابط هنا"></textarea>
+    <div id="xferMsg" role="status"></div>
+  </section>
   <div class="chips" id="chips"></div>
   <div class="main" id="main" data-view="list">
     <section class="listwrap">
@@ -295,6 +309,28 @@ function queueSave(){if(!ref)return;clearTimeout(saveTimer);saveTimer=setTimeout
     ls.set('cr_done',[...done]);updateProgress();renderList();drawMap();setSync('محفوظ في حسابك');},
   ()=>{clearTimeout(to);setSync('تعذّر الاتصال بالحساب؛ التقدّم محفوظ في هذا المتصفح');});
 })();
+
+// ---------- move progress between devices (code = bitset over the item list) ----------
+const ORDER=RAW.map(r=>r[0]);
+function encodeDone(){const b=new Uint8Array(Math.ceil(ORDER.length/8));ORDER.forEach((id,i)=>{if(done.has(id))b[i>>3]|=1<<(i&7)});
+  let s='';b.forEach(x=>s+=String.fromCharCode(x));return 'cr1.'+ORDER.length+'.'+btoa(s).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');}
+function decodeDone(code){const m=String(code).match(/cr1\.(\d+)\.([A-Za-z0-9_-]+)/);if(!m)return null;if(+m[1]!==ORDER.length)return 'mismatch';
+  let b64=m[2].replace(/-/g,'+').replace(/_/g,'/');while(b64.length%4)b64+='=';let s;try{s=atob(b64)}catch(e){return null}
+  const ids=[];for(let i=0;i<ORDER.length;i++){if((s.charCodeAt(i>>3)||0)&(1<<(i&7)))ids.push(ORDER[i]);}return ids;}
+function mergeCode(code){const ids=decodeDone(code);
+  if(ids==='mismatch')return 'الرمز من نسخة مختلفة من القائمة؛ حدّث الصفحة في الجهازين ثم انسخ الرمز من جديد.';
+  if(!ids)return 'ما عرفت الرمز. انسخه كاملًا (يبدأ بـ cr1.) ثم الصقه مرة ثانية.';
+  let n=0;ids.forEach(id=>{if(!done.has(id)){done.add(id);n++;}});ls.set('cr_done',[...done]);queueSave();
+  cur=filtered();renderList();updateProgress();drawMap();return n?`أُضيف ${n} عنصرًا إلى ما جمعته.`:'كل عناصر الرمز موجودة عندك أصلًا.';}
+$('xferBtn').onclick=()=>{const x=$('xfer');x.hidden=!x.hidden;$('xferBtn').setAttribute('aria-expanded',String(!x.hidden));$('xferMsg').textContent='';};
+$('xferCopy').onclick=()=>{const base=location.protocol==='https:'&&location.host.endsWith('github.io')?location.origin+location.pathname+'#':'';
+  const code=base+encodeDone();$('xferBox').value=code;const done1=()=>{$('xferMsg').textContent='نُسخ الرمز. أرسله لنفسك وألصقه في الجهاز الثاني.';};
+  if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(code).then(done1,()=>{$('xferBox').select();$('xferMsg').textContent='حدّد الرمز في المربع وانسخه يدويًّا.';});}
+  else{$('xferBox').select();$('xferMsg').textContent='حدّد الرمز في المربع وانسخه يدويًّا.';}};
+$('xferMerge').onclick=()=>{$('xferMsg').textContent=mergeCode($('xferBox').value);};
+if(/cr1\./.test(location.hash)){const msg=mergeCode(decodeURIComponent(location.hash));
+  try{history.replaceState(null,'',location.pathname+location.search)}catch(e){}
+  $('xfer').hidden=false;$('xferMsg').textContent=msg;}
 
 cur=filtered();shown=PAGE;updateProgress();renderList();resize();
 if(document.fonts)document.fonts.ready.then(drawMap);
