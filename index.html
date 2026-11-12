@@ -62,6 +62,7 @@ canvas{display:block;width:100%;height:100%;touch-action:none;cursor:grab}
 #card{position:absolute;bottom:30px;right:10px;width:min(360px,calc(100% - 20px));background:var(--panel);border:1px solid var(--line);border-top:3px solid var(--red);border-radius:4px;padding:12px;box-shadow:0 6px 24px rgba(0,0,0,.18);display:flex;flex-direction:column;gap:6px;max-height:60%;overflow:auto}
 #card h3{margin:0;font-size:15px}
 #card .k{font-size:12px;color:var(--muted)}
+#card .what{font-size:13px;background:color-mix(in srgb,var(--red) 8%,transparent);border-inline-start:3px solid var(--red);padding:6px 8px;border-radius:2px}
 #card a{color:var(--red);overflow-wrap:anywhere;font-size:12px}
 #card .x{position:absolute;top:6px;left:8px;background:none;border:0;color:var(--muted);font-size:18px;cursor:pointer}
 #xfer{background:var(--panel);border:1px solid var(--line);border-top:3px solid var(--red);border-radius:4px;padding:12px;display:flex;flex-direction:column;gap:8px}
@@ -159,6 +160,49 @@ const items=RAW.map(r=>{const it={id:r[0],zone:r[1],sub:r[2],type:r[3],tar:r[4],
   it.g=GROUPS.find(g=>g[3].test(it.tar))[0]; it.hasDesc=!/من الملفات فقط|من ملفات اللعبة فقط|لا موقع ثابت/.test(it.place);
   it.hay=(it.name+' '+it.place+' '+it.sub+' '+it.tar+' '+it.arch).toLowerCase(); return it;});
 const byId=new Map(items.map(i=>[i.id,i]));
+// what each kind of point is, in one or two lines (from docs/MECHANICS_AR.md)
+const TYPE_INFO={
+ health_element:'كرة صحة في العالم تعيد جزءًا كبيرًا من صحتك. الصحة لا تتجدّد وحدها، ولا تُلتقط وصحتك ممتلئة.',
+ boss_health_pickup:'عنصر صحة داخل ساحة زعيم، تستعمله أثناء القتال.',
+ minigame_health_pickup:'عنصر صحة داخل لعبة مصغّرة.',
+ small_resource_crate:'صندوق صغير بمكافأة متواضعة من المواد. تحفة «المغناطيس التذكاري» تُظهر القريب منها على الرادار.',
+ large_resource_crate:'صندوق كبير بمكافأة قيّمة، وأهم مصدر لنقاط ترقية الصحة والطاقة. ترقية المنطقة «علامات صناديق الموارد الكبيرة» تضعها على خريطة اللعبة.',
+ document:'وثيقة تُقرأ وتُحفظ في الأرشيف. تفيد القصة والخلفية ولا تمنح قوة.',
+ audio_log:'تسجيل صوتي يُسمع ويُحفظ في الأرشيف.',
+ video:'فيديو يُحفظ في الأرشيف.',
+ image_photo:'صورة أو رسم يُحفظ في الأرشيف.',
+ instant_photo:'صورة فورية تُحفظ في الأرشيف.',
+ canvas_pickup:'لوحة قماشية تُجمع وتُحفظ في الأرشيف.',
+ orientation_point:'نقطة توجيه: تفعّلها فتصير نقطة عودتك إذا متّ. تحفظ موقعك فقط؛ المخزون وحالة العالم يُحفظان تلقائيًّا.',
+ fast_travel_point:'باب انتقال سريع: فعّله مرة، ثم تنتقل بين الأبواب المفعّلة من الخريطة.',
+ power_core:'نواة طاقة: اضرب نواة نشطة لتأخذ شحنتها، ثم اضرب نواة خامدة لتفعيلها؛ تُشغّل أبوابًا وآلات. الشحنة تعود بعد مدة إن تأخرت.',
+ power_core_station:'محطة نواة طاقة: مصدر ثابت لشحنات النوى.',
+ dominance_pickup:'غرض هيمنة في ساحات القتال: التقطه فتدخل «الهيمنة» فورًا، فيزيد ضربك القريب نحو الضعف 8 ثوانٍ، وكل عدو تقتله فيها يُسقط صحة.',
+ world_feat:'إنجاز ميداني: هدف اختياري في العالم (إنزال جوي، صيد عدو قوي، تفشٍّ…). مكافأته جيدة وتمنح خبرة المنطقة، ويتجدّد مع كل دورة رنّان.',
+ field_research:'بحث ميداني: مدخل في الأرشيف يصف نوعًا من الأعداء وسلوكه، ويُفتح حين تواجه هذا العدو.',
+ task:'تكليف من المكتب: مهمة قصيرة تأخذها من لوحة التكليفات في المناطق الآمنة، وتُتابَع في سجل المهام.',
+ mini_quest_site:'نشاط جانبي أو موقع مهمة صغيرة.',
+ untapped_artifact:'تحفة كامنة: وصفة تحفة. تأخذها إلى «تشكيل التحف» في الفجوة لتصنع التحفة الحقيقية.',
+ artifact:'تحفة: تُجهَّز في العُدّة وتمنح تأثيرًا دائمًا (مثل زيادة الصحة المستعادة أو كشف الصناديق).',
+ customization_item:'قطعة تخصيص: زيّ أو مظهر لديلان، تُلبس من خزانة الملابس. تجميلية فقط.',
+ customization_station:'محطة تخصيص (خزانة ملابس): تغيّر فيها مظهر ديلان.',
+ resource_currency:'مورد أو عملة: مادة تُستعمل في ترقية السلاح وصنع التحف.',
+ echo:'صدى: مادة لصنع التحف.',
+ key_item:'مفتاح أو بطاقة دخول تفتح أبوابًا وأماكن.',
+ quest_item:'غرض مهمة تحتاجه لإكمال مهمة.',
+ quest_pickup_interaction:'غرض تلتقطه أثناء مهمة.',
+ vendor:'بائع: يبيع أغراضًا شاذّة وتحفًا. ترقيات المنطقة ترفع مستوى بضاعته.',
+ arcade_machine:'جهاز أركيد SHÜM: تحدٍّ قابل للإعادة بلوحة صدارة؛ المراكز الأعلى تمنح نقاط ترقية الطاقة وأزياء. يُفتح بترقية المنطقة.',
+ map_kit:'طقم خرائط: عاير المستشعرات الثلاثة ثم فعّل البرج، فتنكشف خريطة المنطقة ويزول الضباب.',
+ command_charge:'شحنة إمرة: تستهلكها قدرة «الإمرة» لتجعل عدوًّا يقاتل معك.',
+ health_upgrade_point:'نقطة ترقية صحة: كل 3 نقاط ترفع حدّ صحتك الأقصى بشكل دائم.',
+ power_upgrade_point:'نقطة ترقية طاقة: كل 3 نقاط ترفع حدّ طاقتك الأقصى بشكل دائم.',
+ living_shard:'شظيّة حيّة: مادة نادرة جدًّا تفتح هيئة سلاح جديدة.',
+ minigame_slide_shard:'شظيّة داخل لعبة مصغّرة.',
+ web_only:'عنصر ذكرته المصادر ولم نجده في ملفات اللعبة.'};
+const PLACE_FIX=[[/من الملفات فقط — قارِن بأوصاف المصادر لهذا النوع في آخر المنطقة/,'لا يوجد وصف مكتوب لمكانه؛ النقطة على الخريطة هي موضعه من ملفات اللعبة'],
+ [/من ملفات اللعبة فقط \(المنطقة الفرعية أعلاه\)/,'لا يوجد وصف مكتوب لمكانه؛ النقطة على الخريطة هي موضعه من ملفات اللعبة']];
+items.forEach(it=>PLACE_FIX.forEach(([a,b])=>{it.place=it.place.replace(a,b)}));
 const $=id=>document.getElementById(id);
 const css=v=>getComputedStyle(document.documentElement).getPropertyValue(v).trim();
 let colors={}; function readColors(){GROUPS.forEach(g=>colors[g[0]]=css(g[2])); ['--grid','--ink','--muted','--red','--mapbg','--panel','--line'].forEach(v=>colors[v]=css(v));}
@@ -256,7 +300,8 @@ function select(id,center){selId=id;const it=byId.get(id);
 function showCard(it){const c=$('card');c.hidden=false;
   c.innerHTML=`<button class="x" aria-label="إغلاق">×</button><h3>${esc(it.name)}</h3>
   <div class="k">${esc(it.tar)} · ${esc(META.zones[it.zone].ar)}${it.sub?' · '+esc(it.sub):''}</div>
-  <div>${esc(it.place)}</div>
+  ${TYPE_INFO[it.type]?`<div class="what">${esc(TYPE_INFO[it.type])}</div>`:''}
+  <div><span class="k">المكان: </span>${esc(it.place)}</div>
   ${it.req&&it.req!=='—'?`<div><span class="k">المتطلبات: </span>${esc(it.req)}</div>`:''}
   ${it.miss===1?'<div class="warn">قابل للتفويت</div>':''}
   ${it.arch?`<div class="k">الأرشيف: ${esc(it.arch)}</div>`:''}
